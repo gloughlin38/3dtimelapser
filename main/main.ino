@@ -17,6 +17,18 @@ ArduCAM myCAM( OV5642, camera_CS );
 //Setting up the limit switch
 ezButton limitSwitch(7);
 
+//Button
+const int buttonPin = 6;
+
+//RGB LED
+const int redPin = 5;
+const int greenPin = 4;
+const int bluePin = 3;
+
+//Variables Changing over time
+int buttonState = 1;
+int lastbuttonState = 1;
+int buttonCount = 0;
 
 void takePicture(){
   char str[8];
@@ -121,6 +133,11 @@ void setup () {
   //These are for checking in on SPI and SD card initializations
   uint8_t vid = 0,pid = 0;
   uint8_t temp = 0;
+  
+  //Init Inputs
+  limitSwitch.setDebounceTime(50); 
+  pinMode(buttonPin, INPUT_PULLUP);
+
   Wire.begin();
 
   Serial.begin(115200);
@@ -182,11 +199,54 @@ void setup () {
   
   delay(1000);
 
+  //Setting up the LED
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, OUTPUT);
+  setColor(255,255,255);//Initial Value
+
 }
 
+void setColor(int redValue, int greenValue, int blueValue) {
+  analogWrite(redPin, redValue);
+  analogWrite(greenPin, greenValue);
+  analogWrite(bluePin, blueValue);
+}
 
 void loop () {
-  limitSwitch.loop();
+  limitSwitch.loop(); 
+
+  buttonState = digitalRead(buttonPin);
+  if (buttonState == LOW && lastbuttonState != buttonState){
+    buttonCount++;
+  }
+
+  if (buttonCount > 4) {
+    buttonCount = 0;
+  }
+
+  switch (buttonCount) {
+    case 0:
+      setColor(255,255,255);
+      break;
+    case 1:
+      setColor(255,0,0);
+      break;
+    case 2:
+      setColor(0,255,0);
+      break;
+    case 3:
+      setColor(0,0,255);
+      break;
+    case 4:
+      setColor(0,0,0);
+      break;
+  }
+
+  lastbuttonState = buttonState;
+
+
+
   if(limitSwitch.isPressed()) {
     takePicture();
   }                                                                        
