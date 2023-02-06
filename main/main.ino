@@ -3,41 +3,43 @@
 #include <Wire.h> 
 #include <SPI.h> //Setting up the SPI comms
 #include <SD.h> //Setting up the SD card logic/communication
-#include <ezButton.h> //Setting the limit switch
+#include <ezButton.h>
+#include <RTClib.h> //Real Time Clock
 
 
 //Setting up the SD card chipselect
 #define SD_CS 9 
+int picNum = 0;
 
 //Setting up the ARDUCAM
 const int camera_CS =10;
 ArduCAM myCAM( OV5642, camera_CS );
 
+//Real time clock
+RTC_DS3231 rtc;
+DateTime myTime;
+char t[32];
 
 //Setting up the limit switch
 ezButton limitSwitch(7);
-
-//Button
-const int buttonPin = 6;
 
 //RGB LED
 const int redPin = 5;
 const int greenPin = 4;
 const int bluePin = 3;
 
-//Variables Changing over time
-int buttonState = 1;
-int lastbuttonState = 1;
-int buttonCount = 0;
 
 void takePicture(){
-  char str[8];
+  char fileStr[8];
+  char outStr[16];
   byte buf[256];
   static int i = 0,k = 0;
   uint8_t temp = 0,temp_last = 0;
   uint32_t length = 0;
   bool is_header = false;
   File outFile;
+
+  setColor(0,0,0);
 
   //Flush FIFO
   myCAM.flush_fifo();
@@ -61,14 +63,13 @@ void takePicture(){
     return;
   }
 
-  //Construct a outFile name
-  k = k + 1;
-  itoa(k, str, 10);
-  strcat(str, ".jpg");
   //Open the new outFile
-  outFile = SD.open(str, FILE_WRITE);
-  if(! outFile){
+  itoa(picNum,fileStr,10);
+  sprintf(outStr,"%s.jpg",fileStr);
+  outFile = SD.open(outStr, FILE_WRITE);
+  if(!outFile){
     Serial.println(F("File open failed"));
+    setColor(255,0,0);
     return;
   }
 
@@ -119,26 +120,33 @@ void takePicture(){
 
   delay(2000);
   Serial.println("Ready for Next Photo");
+  setColor(0,255,0);
+  delay(1000);
 
 }
-
-
-
-
-
-
 
 
 void setup () {
   //These are for checking in on SPI and SD card initializations
   uint8_t vid = 0,pid = 0;
   uint8_t temp = 0;
-  
-  //Init Inputs
-  limitSwitch.setDebounceTime(50); 
-  pinMode(buttonPin, INPUT_PULLUP);
+
+  //Setting up the LED
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, OUTPUT);
+  setColor(0,0,255);//Initial Value
 
   Wire.begin();
+
+  //RTC
+  rtc.begin();
+  if (rtc.lostPower()) {
+    Serial.println("Power was Lost, Set the Time");
+    rtc.adjust(DateTime(F(__DATE__),F(__TIME__)));
+  }
+  //rtc.adjust(DateTime(2023, 1, 22, 8, 25, 0));//This is to set the time if it gets off
+
 
   Serial.begin(115200);
 
@@ -164,17 +172,23 @@ void setup () {
     if(temp != 0x55)
     {
       Serial.println(F("SPI interface Error!, Trying Again"));
+      setColor(255,0,0);
       delay(1000);
     }else{
-      Serial.println(F("SPI interface OK."));break;
+      Serial.println(F("SPI interface OK."));
+      setColor(0,0,255);
+      break;
     }
   }
 
   //Initialize SD Card
   while(!SD.begin(SD_CS)){
-    Serial.println(F("SD Card Error! Trying Again"));delay(1000);
+    Serial.println(F("SD Card Error! Trying Again"));
+    setColor(255,0,0);
+    delay(1000);
   }
   Serial.println(F("SD Card detected."));
+  setColor(0,0,255);
 
   while(1){
     //Check if the camera module type is OV5642
@@ -183,12 +197,14 @@ void setup () {
     myCAM.rdSensorReg16_8(OV5642_CHIPID_LOW, &pid);
     if((vid != 0x56) || (pid != 0x42)){
       Serial.println(F("Can't find OV5642 module! Trying Again"));
+      setColor(255,0,0);
       delay(1000);
     } else{
-     Serial.println(F("OV5642 detected.")); break;
+     Serial.println(F("OV5642 detected."));
+     setColor(0,0,255);
+     break;
     }
   }
-
 
   //Other parameter settings for the camera
   myCAM.set_format(JPEG);
@@ -196,14 +212,9 @@ void setup () {
   myCAM.write_reg(ARDUCHIP_TIM, VSYNC_LEVEL_MASK);   //VSYNC is active HIGH
   myCAM.OV5642_set_JPEG_size(OV5642_2592x1944);delay(1000);
   
-  
+  setColor(255,255,255);
+  Serial.println("Ready to Go!");
   delay(1000);
-
-  //Setting up the LED
-  pinMode(redPin, OUTPUT);
-  pinMode(greenPin, OUTPUT);
-  pinMode(bluePin, OUTPUT);
-  setColor(255,255,255);//Initial Value
 
 }
 
@@ -216,38 +227,9 @@ void setColor(int redValue, int greenValue, int blueValue) {
 void loop () {
   limitSwitch.loop(); 
 
-  buttonState = digitalRead(buttonPin);
-  if (buttonState == LOW && lastbuttonState != buttonState){
-    buttonCount++;
-  }
-
-  if (buttonCount > 4) {
-    buttonCount = 0;
-  }
-
-  switch (buttonCount) {
-    case 0:
-      setColor(255,255,255);
-      break;
-    case 1:
-      setColor(255,0,0);
-      break;
-    case 2:
-      setColor(0,255,0);
-      break;
-    case 3:
-      setColor(0,0,255);
-      break;
-    case 4:
-      setColor(0,0,0);
-      break;
-  }
-
-  lastbuttonState = buttonState;
-
-
-
-  if(limitSwitch.isPressed()) {
+  if(limitSwitch.isPressed()) { 
+    picNum++;
     takePicture();
-  }                                                                        
+  }               
+
 }
